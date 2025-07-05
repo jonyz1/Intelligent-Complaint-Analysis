@@ -131,7 +131,7 @@ def rag_pipeline_wrapper(query):
     Wrapper for rag_pipeline to format output for Gradio.
     """
     if not query:
-        return "Please enter a query.", []
+        return "  Please enter a query.", []
     
     result = rag_pipeline(query)
     answer = result['answer'].split("Answer:")[-1].strip() if "Answer:" in result['answer'] else result['answer']
