@@ -122,57 +122,57 @@
 
 
 
-
-import gradio as gr
+import streamlit as st
+import pandas as pd
+import plotly.express as px
 from src.rag_pipeline import rag_pipeline
+from pathlib import Path
+import shap
+import numpy as np
+from sentence_transformers import SentenceTransformer
 
-def rag_pipeline_wrapper(query):
-    """
-    Wrapper for rag_pipeline to format output for Gradio.
-    """
-    if not query:
-        return "  Please enter a query.", []
-    
-    result = rag_pipeline(query)
-    answer = result['answer'].split("Answer:")[-1].strip() if "Answer:" in result['answer'] else result['answer']
-    sources = [
-        f"Complaint ID: {chunk['complaint_id']} (Product: {chunk['product']}): {chunk['text']}"
-        for chunk in result['retrieved_chunks']
-    ]
-    return answer, sources
+# Set up paths
+DATA_PATH = Path("data")
+VECTOR_STORE_PATH = Path("src/vector_store")
+REPORTS_PATH = Path("reports")
 
-def clear_chat():
-    """
-    Clear the input and output fields.
-    """
-    return "", [], ""
+# Load data for visualization
+@st.cache_data
+def load_complaints():
+    return pd.read_csv(DATA_PATH / "filtered_complaints.csv")
 
-# Set up Gradio interface
-with gr.Blocks(title="CrediTrust Complaint Analysis") as demo:
-    gr.Markdown("# CrediTrust Financial Complaint Analysis")
-    gr.Markdown("Enter a query about customer complaints for CrediTrust’s products (Credit Card, Personal Loan, BNPL, Savings Account, Money Transfers).")
-    
-    with gr.Row():
-        question_input = gr.Textbox(label="Enter your query", placeholder="e.g., What are common issues with Credit Card billing disputes?")
-        submit_button = gr.Button("Submit")
-    
-    answer_output = gr.Textbox(label="Answer", lines=5)
-    sources_output = gr.Textbox(label="Retrieved Sources", lines=5)
-    clear_button = gr.Button("Clear")
-    
-    # Connect submit button to RAG pipeline
-    submit_button.click(
-        fn=rag_pipeline_wrapper,
-        inputs=question_input,
-        outputs=[answer_output, sources_output]
-    )
-    
-    # Connect clear button to clear function
-    clear_button.click(
-        fn=clear_chat,
-        inputs=None,
-        outputs=[question_input, sources_output, answer_output]
-    )
+# Streamlit app
+st.title("CrediTrust Financial Complaint Analysis")
+st.markdown("Analyze customer complaints for Credit Card, Personal Loan, BNPL, Savings Account, and Money Transfers.")
 
-# Launch the interface
-demo.launch()
+# Query input
+query = st.text_input("Enter your query", placeholder="e.g., What are common issues with Credit Card billing disputes?")
+
+# Submit button
+if st.button("Submit"):
+    if query:
+        result = rag_pipeline(query)
+        answer = result['answer'].split("Answer:")[-1].strip() if "Answer:" in result['answer'] else result['answer']
+        sources = "\n".join([f"Complaint ID: {chunk['complaint_id']} (Product: {chunk['product']}): {chunk['text']}" for chunk in result['retrieved_chunks']])
+        
+        st.subheader("Answer")
+        st.write(answer)
+        st.subheader("Retrieved Sources")
+        st.write(sources)
+
+        # SHAP explainability (simplified)
+        embedding_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+        explainer = shap.KernelExplainer(lambda x: embedding_model.encode(x), np.array([query]))
+        shap_values = explainer.shap_values([query])
+        st.subheader("SHAP Explainability")
+        st.pyplot(shap.force_plot(explainer.expected_value, shap_values[0], feature_names=["Query Terms"]))
+
+# Complaint trends visualization
+st.subheader("Complaint Trends")
+df = load_complaints()
+fig = px.bar(df, x="Product", title="Complaints by Product")
+st.plotly_chart(fig)
+
+# Clear button
+if st.button("Clear"):
+    st.experimental_rerun()
